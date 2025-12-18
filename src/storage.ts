@@ -1,50 +1,60 @@
 import { createMMKV } from 'react-native-mmkv';
-
 export const storage = createMMKV();
 
-const STORAGE_KEYS = {
-  CUMULATIVE_STEPS: 'cumulative_steps',
+export const STORAGE_KEYS = {
+  TODAY_STEPS: 'today_steps',
   LAST_SENSOR_COUNT: 'last_sensor_count',
-  STEPS_DATE: 'steps_date',
+  LAST_DATE: 'last_date',
 };
 
-// Get today's date as a string (YYYY-MM-DD)
-const getTodayString = () => {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  return now.toISOString().split('T')[0];
+const getTodayDate = () => {
+  const today = new Date();
+  return `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
 };
 
-// Load cumulative steps for today
 export const loadTodaySteps = (): number => {
-  const today = getTodayString();
-  const savedDate = storage.getString(STORAGE_KEYS.STEPS_DATE);
+  try {
+    const storedDate = storage.getString(STORAGE_KEYS.LAST_DATE);
+    const todayDate = getTodayDate();
 
-  // If it's a new day, reset steps
-  if (savedDate !== today) {
-    storage.set(STORAGE_KEYS.CUMULATIVE_STEPS, 0);
-    storage.set(STORAGE_KEYS.STEPS_DATE, today);
+    if (storedDate !== todayDate) {
+      storage.set(STORAGE_KEYS.LAST_DATE, todayDate);
+      storage.set(STORAGE_KEYS.TODAY_STEPS, 0);
+      storage.set(STORAGE_KEYS.LAST_SENSOR_COUNT, 0);
+      return 0;
+    }
 
-    storage.remove(STORAGE_KEYS.LAST_SENSOR_COUNT);
+    const steps = storage.getNumber(STORAGE_KEYS.TODAY_STEPS);
+    return steps ?? 0;
+  } catch (error) {
+    console.error('Error loading steps:', error);
     return 0;
   }
-
-  return storage.getNumber(STORAGE_KEYS.CUMULATIVE_STEPS) || 0;
 };
 
-// Save cumulative steps
 export const saveTodaySteps = (steps: number) => {
-  const today = getTodayString();
-  storage.set(STORAGE_KEYS.CUMULATIVE_STEPS, steps);
-  storage.set(STORAGE_KEYS.STEPS_DATE, today);
+  try {
+    storage.set(STORAGE_KEYS.TODAY_STEPS, steps);
+    storage.set(STORAGE_KEYS.LAST_DATE, getTodayDate());
+  } catch (error) {
+    console.error('Error saving steps:', error);
+  }
 };
 
-// Get the last sensor count (to calculate delta)
 export const getLastSensorCount = (): number => {
-  return storage.getNumber(STORAGE_KEYS.LAST_SENSOR_COUNT) || 0;
+  try {
+    const count = storage.getNumber(STORAGE_KEYS.LAST_SENSOR_COUNT);
+    return count ?? 0;
+  } catch (error) {
+    console.error('Error getting last sensor count:', error);
+    return 0;
+  }
 };
 
-// Save the last sensor count
 export const saveLastSensorCount = (count: number) => {
-  storage.set(STORAGE_KEYS.LAST_SENSOR_COUNT, count);
+  try {
+    storage.set(STORAGE_KEYS.LAST_SENSOR_COUNT, count);
+  } catch (error) {
+    console.error('Error saving sensor count:', error);
+  }
 };

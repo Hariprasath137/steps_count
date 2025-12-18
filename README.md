@@ -95,3 +95,109 @@ To learn more about React Native, take a look at the following resources:
 - [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
 - [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
 - [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+
+# React Native Step Counter - Platform-Specific Setup
+
+## Key Features
+
+**Android**: Foreground service keeps tracking even when app is closed
+**iOS**: HealthKit reads system-tracked steps (no foreground service needed)
+**Both**: Auto-start tracking when app opens, persist steps across restarts
+
+---
+
+## Android Setup (Foreground Service)
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Update `android/app/src/main/AndroidManifest.xml`
+
+Add these permissions inside the `<manifest>` tag:
+
+```xml
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+<uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+<uses-permission android:name="android.permission.WAKE_LOCK" />
+```
+
+### 3. Run the app
+
+```bash
+npm run android
+```
+
+### How it works:
+
+- Persistent notification keeps app alive in background
+- Steps continue tracking even when app is closed
+- Auto-restarts when you reopen the app
+
+---
+
+## iOS Setup (HealthKit)
+
+### 1. Install dependencies and pods
+
+```bash
+npm install
+cd ios && pod install && cd ..
+```
+
+### 2. Enable HealthKit in Xcode
+
+- Open `ios/YourApp.xcworkspace` in Xcode
+- Select your project target
+- Go to "Signing & Capabilities"
+- Click "+ Capability" → Add "HealthKit"
+
+### 3. Update `ios/YourApp/Info.plist`
+
+Add these keys:
+
+```xml
+<key>NSHealthShareUsageDescription</key>
+<string>We need access to your step count to track your daily activity</string>
+<key>NSHealthUpdateUsageDescription</key>
+<string>We need access to update your step count</string>
+<key>NSMotionUsageDescription</key>
+<string>We need access to your motion data to track steps</string>
+```
+
+### 4. Run the app
+
+```bash
+npm run ios
+```
+
+### How it works:
+
+- iOS tracks steps automatically in background via Core Motion
+- App queries HealthKit for today's steps when opened
+- Updates every 5 seconds while app is open
+- More battery efficient than foreground service
+
+---
+
+## Troubleshooting
+
+**Android: Steps not tracking when app is closed**
+
+- Check notification permission is granted
+- Check foreground service permission
+- Verify persistent notification is visible
+
+**iOS: Not getting step data**
+
+- Grant HealthKit permissions
+- Check NSHealthShareUsageDescription in Info.plist
+- Ensure HealthKit capability is enabled in Xcode
+
+**Both: Steps reset to zero**
+
+- This is intentional - steps reset at midnight each day
+- Check date logic in storage.ts if you need different behavior
