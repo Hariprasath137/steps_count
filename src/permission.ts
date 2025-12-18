@@ -1,21 +1,20 @@
-import { Platform } from 'react-native';
-import {
-  check,
-  openSettings,
-  PERMISSIONS,
-  request,
-  RESULTS,
-} from 'react-native-permissions';
-
-const ANDROID_MOTION = PERMISSIONS.ANDROID.ACTIVITY_RECOGNITION;
-const IOS_MOTION = PERMISSIONS.IOS.MOTION;
+import { PermissionsAndroid, Platform } from 'react-native';
 
 export async function getStepPermission() {
-  const perm = Platform.OS === 'ios' ? IOS_MOTION : ANDROID_MOTION;
-  const result = await request(perm);
-  if (result === RESULTS.GRANTED) return true;
+  if (Platform.OS !== 'android') return true;
 
-  openSettings();
-  const recheck = await check(perm);
-  return recheck === RESULTS.GRANTED;
+  const result = await PermissionsAndroid.request(
+    PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION,
+  );
+
+  return result === PermissionsAndroid.RESULTS.GRANTED;
+
+  //  else {
+  //     const result = await request(PERMISSIONS.IOS.MOTION);
+  //     if (result === RESULTS.GRANTED) return true;
+
+  //     openSettings();
+  //     const recheck = await check(PERMISSIONS.IOS.MOTION);
+  //     return recheck === RESULTS.GRANTED;
+  //   }
 }

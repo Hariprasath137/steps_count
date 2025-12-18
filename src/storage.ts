@@ -24,7 +24,6 @@ export const loadTodaySteps = (): number => {
   if (savedDate !== today) {
     storage.set(STORAGE_KEYS.CUMULATIVE_STEPS, 0);
     storage.set(STORAGE_KEYS.STEPS_DATE, today);
-
     storage.remove(STORAGE_KEYS.LAST_SENSOR_COUNT);
     return 0;
   }

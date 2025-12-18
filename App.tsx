@@ -3,93 +3,101 @@
 import {
   parseStepData,
   startStepCounterUpdate,
-  stopStepCounterUpdate,
 } from '@dongminyu/react-native-step-counter';
 import { useEffect, useState } from 'react';
-import { Button, StyleSheet, View } from 'react-native';
+import { AppState, Platform, StyleSheet, View } from 'react-native';
 import CircularProgress from 'react-native-circular-progress-indicator';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  ensureStepListener,
+  startBackgroundService,
+} from './src/backgroundService';
 import LogCat from './src/LogCat';
 import { getStepPermission } from './src/permission';
-import {
-  getLastSensorCount,
-  loadTodaySteps,
-  saveLastSensorCount,
-  saveTodaySteps,
-} from './src/storage';
-
-// const getStartOfDay = () => {
-//   const now = new Date();
-//   now.setHours(0, 0, 0, 0);
-//   return now;
-// };
+import { loadTodaySteps } from './src/storage';
 
 export default function App() {
   const [allowed, setAllowed] = useState(false);
-  const [active, setActive] = useState(false);
   const [steps, setSteps] = useState(0);
-  const [info, setInfo] = useState({ calories: '0 kCal' });
+  const [calories, setCalories] = useState('0 kCal');
 
   const loadPersistedSteps = () => {
     const todaySteps = loadTodaySteps();
     setSteps(todaySteps);
+    const cals = Math.floor(todaySteps * 0.04);
+    setCalories(cals + ' kCal');
     console.log('Loaded persisted steps:', todaySteps);
   };
 
-  const start = () => {
-    startStepCounterUpdate(new Date(), raw => {
-      const d = parseStepData(raw);
+  const startService = () => {
+    if (Platform.OS === 'android') {
+      startBackgroundService();
+    } else {
+      // iOS - use regular step counter
+      startStepCounterUpdate(new Date(), raw => {
+        const d = parseStepData(raw);
+        console.log(d);
+      });
+    }
+  };
 
-      const previousSensorCount = getLastSensorCount();
-      const existingSteps = loadTodaySteps();
-
-      let delta = 0;
-
-      if (d.steps >= previousSensorCount) {
-        // normal case
-        delta = d.steps - previousSensorCount;
-      } else {
-        // SENSOR RESET (phone reboot / app kill / driver restart)
-        delta = d.steps;
+  // Update UI when app comes to foreground
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (nextAppState === 'active') {
+        console.log('📱 App came to foreground');
+        loadPersistedSteps();
       }
-
-      const totalSteps = existingSteps + delta;
-
-      console.log('Sensor:', d.steps);
-      console.log('Prev sensor:', previousSensorCount);
-      console.log('Delta:', delta);
-      console.log('Total:', totalSteps);
-
-      setSteps(totalSteps);
-      setInfo(d);
-
-      saveTodaySteps(totalSteps);
-      saveLastSensorCount(d.steps);
     });
 
-    setActive(true);
-  };
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
-  const stop = () => {
-    stopStepCounterUpdate();
-    setActive(false);
-  };
+  // Periodically update steps from storage
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadPersistedSteps();
+    }, 2000);
 
+    return () => clearInterval(interval);
+  }, []);
+
+  // Initialize on mount - auto-start
   useEffect(() => {
     const initialize = async () => {
       const granted = await getStepPermission();
+      console.log('Step permission result:', granted);
       setAllowed(granted);
 
-      if (granted) {
+      if (!granted) return;
+
+      // 1️⃣ Start sensor listener ONCE for app lifetime
+      setTimeout(() => {
+        ensureStepListener();
+        if (Platform.OS === 'android') {
+          startBackgroundService();
+        }
         loadPersistedSteps();
-        start();
+      }, 300);
+
+      // 2️⃣ Start foreground service (Android only)
+      if (Platform.OS === 'android') {
+        startBackgroundService();
       }
+
+      // 3️⃣ Load UI state
+      loadPersistedSteps();
     };
 
     initialize();
 
-    return () => stopStepCounterUpdate();
+    return () => {
+      console.log('App unmounting - service continues in background');
+    };
   }, []);
+
   console.log('Permission allowed:', allowed);
 
   return (
@@ -100,15 +108,10 @@ export default function App() {
           maxValue={10000}
           radius={150}
           valueSuffix=" steps"
-          subtitle={info.calories === '0 kCal' ? '' : info.calories}
+          subtitle={calories}
         />
 
-        <View style={styles.row}>
-          <Button title="Start" onPress={start} disabled={active} />
-          <Button title="Stop" onPress={stop} disabled={!active} />
-        </View>
-
-        <LogCat active={active} />
+        <LogCat active={true} />
       </View>
     </SafeAreaView>
   );
@@ -120,11 +123,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     backgroundColor: '#2f3774',
-  },
-  row: {
-    flexDirection: 'row',
-    marginVertical: 10,
-    justifyContent: 'space-between',
-    width: '80%',
   },
 });
