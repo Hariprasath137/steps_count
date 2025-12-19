@@ -1,14 +1,24 @@
-'use client';
-
 import {
   parseStepData,
   startStepCounterUpdate,
   stopStepCounterUpdate,
 } from '@dongminyu/react-native-step-counter';
 import { useEffect, useState } from 'react';
-import { Button, StyleSheet, View } from 'react-native';
+import {
+  AppState,
+  Button,
+  PermissionsAndroid,
+  Platform,
+  StyleSheet,
+  View,
+} from 'react-native';
 import CircularProgress from 'react-native-circular-progress-indicator';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  startBackgroundService,
+  stopBackgroundService,
+  updateNotificationSteps,
+} from './src/backGround';
 import LogCat from './src/LogCat';
 import { getStepPermission } from './src/permission';
 import {
@@ -17,12 +27,6 @@ import {
   saveLastSensorCount,
   saveTodaySteps,
 } from './src/storage';
-
-// const getStartOfDay = () => {
-//   const now = new Date();
-//   now.setHours(0, 0, 0, 0);
-//   return now;
-// };
 
 export default function App() {
   const [allowed, setAllowed] = useState(false);
@@ -37,46 +41,95 @@ export default function App() {
   };
 
   const start = () => {
-    startStepCounterUpdate(new Date(), raw => {
-      const d = parseStepData(raw);
+    if (Platform.OS === 'android') {
+      // Start background service
+      startBackgroundService();
+    } else {
+      // iOS - use regular step counter
+      startStepCounterUpdate(new Date(), raw => {
+        const d = parseStepData(raw);
+        const previousSensorCount = getLastSensorCount();
+        const existingSteps = loadTodaySteps();
 
-      const previousSensorCount = getLastSensorCount();
-      const existingSteps = loadTodaySteps();
+        let delta = 0;
+        if (d.steps >= previousSensorCount) {
+          delta = d.steps - previousSensorCount;
+        } else {
+          delta = d.steps;
+        }
 
-      let delta = 0;
+        const totalSteps = existingSteps + delta;
 
-      if (d.steps >= previousSensorCount) {
-        // normal case
-        delta = d.steps - previousSensorCount;
-      } else {
-        // SENSOR RESET (phone reboot / app kill / driver restart)
-        delta = d.steps;
-      }
+        console.log('Sensor:', d.steps);
+        console.log('Prev sensor:', previousSensorCount);
+        console.log('Delta:', delta);
+        console.log('Total:', totalSteps);
 
-      const totalSteps = existingSteps + delta;
+        setSteps(totalSteps);
+        setInfo(d);
 
-      console.log('Sensor:', d.steps);
-      console.log('Prev sensor:', previousSensorCount);
-      console.log('Delta:', delta);
-      console.log('Total:', totalSteps);
-
-      setSteps(totalSteps);
-      setInfo(d);
-
-      saveTodaySteps(totalSteps);
-      saveLastSensorCount(d.steps);
-    });
+        saveTodaySteps(totalSteps);
+        saveLastSensorCount(d.steps);
+      });
+    }
 
     setActive(true);
   };
 
   const stop = () => {
-    stopStepCounterUpdate();
+    if (Platform.OS === 'android') {
+      stopBackgroundService();
+    } else {
+      stopStepCounterUpdate();
+    }
     setActive(false);
   };
 
+  // Update UI when app comes to foreground
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (nextAppState === 'active') {
+        // Reload steps when app comes to foreground
+        loadPersistedSteps();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  // Periodically update steps from storage when in foreground
+  useEffect(() => {
+    if (!active) return;
+
+    const interval = setInterval(() => {
+      const currentSteps = loadTodaySteps();
+      setSteps(currentSteps);
+
+      // Update notification if on Android
+      if (Platform.OS === 'android') {
+        try {
+          updateNotificationSteps(currentSteps, info.calories);
+        } catch (error) {
+          console.log('Notification update failed:', error);
+        }
+      }
+    }, 2000); // Update every 2 seconds
+
+    return () => clearInterval(interval);
+  }, [active, info.calories]);
+
   useEffect(() => {
     const initialize = async () => {
+      // 1. Request Notification Permission (Android 13+)
+      if (Platform.OS === 'android' && Platform.Version >= 33) {
+        await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+        );
+      }
+
+      // 2. Get Step Permission
       const granted = await getStepPermission();
       setAllowed(granted);
 
@@ -88,8 +141,15 @@ export default function App() {
 
     initialize();
 
-    return () => stopStepCounterUpdate();
+    return () => {
+      //   if (Platform.OS === 'android') {
+      //     // Don't stop the service on unmount - let it run in background
+      //   } else {
+      //     stopStepCounterUpdate();
+      //   }
+    };
   }, []);
+
   console.log('Permission allowed:', allowed);
 
   return (
