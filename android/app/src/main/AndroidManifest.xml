@@ -1,11 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"> <uses-permission android:name="android.permission.INTERNET" />
+    xmlns:tools="http://schemas.android.com/tools"> 
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-permission android:name="android.permission.BODY_SENSORS_BACKGROUND" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" /> <uses-feature
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" /> 
+    <uses-feature
       android:name="android.hardware.sensor.stepcounter"
       android:required="false" />
     <uses-feature
@@ -22,32 +25,14 @@
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
       
-      <meta-data
-        android:name="com.supersami.foregroundservice.notification_channel_name"
-        android:value="Step Counter"
-      />
-      <meta-data
-        android:name="com.supersami.foregroundservice.notification_channel_description"
-        android:value="Tracking your daily steps"
-      />
-      <meta-data
-        android:name="com.supersami.foregroundservice.notification_color"
-        android:resource="@color/blue"
-      />
-  
-      <service 
-        android:name="com.supersami.foregroundservice.ForegroundService"
-        android:foregroundServiceType="health"
-        android:exported="true"
-        tools:node="merge"
-        tools:replace="android:foregroundServiceType" />
-        
-      <service 
-        android:name="com.supersami.foregroundservice.ForegroundServiceTask"
-        android:foregroundServiceType="health"
-        android:exported="true"
-        tools:node="merge"
-        tools:replace="android:foregroundServiceType" />
+      <service
+            android:name="app.notifee.core.ForegroundService"
+            android:foregroundServiceType="health"
+            android:exported="false"
+            tools:node="merge"
+            tools:replace="android:foregroundServiceType" />
+
+    
 
       <activity
         android:name=".MainActivity"

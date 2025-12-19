@@ -10,9 +10,7 @@ const STORAGE_KEYS = {
 
 // Get today's date as a string (YYYY-MM-DD)
 const getTodayString = () => {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  return now.toISOString().split('T')[0];
+  return new Date().toISOString().split('T')[0];
 };
 
 // Load cumulative steps for today
@@ -24,7 +22,6 @@ export const loadTodaySteps = (): number => {
   if (savedDate !== today) {
     storage.set(STORAGE_KEYS.CUMULATIVE_STEPS, 0);
     storage.set(STORAGE_KEYS.STEPS_DATE, today);
-
     storage.remove(STORAGE_KEYS.LAST_SENSOR_COUNT);
     return 0;
   }
@@ -34,9 +31,8 @@ export const loadTodaySteps = (): number => {
 
 // Save cumulative steps
 export const saveTodaySteps = (steps: number) => {
-  const today = getTodayString();
   storage.set(STORAGE_KEYS.CUMULATIVE_STEPS, steps);
-  storage.set(STORAGE_KEYS.STEPS_DATE, today);
+  storage.set(STORAGE_KEYS.STEPS_DATE, getTodayString());
 };
 
 // Get the last sensor count (to calculate delta)

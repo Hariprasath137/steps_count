@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "@dongminyu/react-native-step-counter": "^0.2.5",
+    "@notifee/react-native": "^9.1.8",
     "@react-native/new-app-screen": "0.83.0",
-    "@supersami/rn-foreground-service": "^2.2.5",
     "react": "19.2.0",
     "react-native": "0.83.0",
     "react-native-circular-progress-indicator": "^4.4.2",
