@@ -6,91 +6,173 @@ import {
   stopStepCounterUpdate,
 } from '@dongminyu/react-native-step-counter';
 import { useEffect, useState } from 'react';
-import { Button, StyleSheet, View } from 'react-native';
+import { Button, StyleSheet, Text, View } from 'react-native';
+import BackgroundService from 'react-native-background-actions';
 import CircularProgress from 'react-native-circular-progress-indicator';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LogCat from './src/LogCat';
 import { getStepPermission } from './src/permission';
 import {
-  getLastSensorCount,
+  loadLastHardwareValue,
   loadTodaySteps,
-  saveLastSensorCount,
+  saveLastHardwareValue,
   saveTodaySteps,
 } from './src/storage';
 
-// const getStartOfDay = () => {
-//   const now = new Date();
-//   now.setHours(0, 0, 0, 0);
-//   return now;
-// };
+// --- BACKGROUND TASK LOGIC ---
 
-export default function App() {
-  const [allowed, setAllowed] = useState(false);
-  const [active, setActive] = useState(false);
-  const [steps, setSteps] = useState(0);
-  const [info, setInfo] = useState({ calories: '0 kCal' });
+const sleep = (time: number) =>
+  new Promise<void>(resolve => setTimeout(() => resolve(), time));
 
-  const loadPersistedSteps = () => {
-    const todaySteps = loadTodaySteps();
-    setSteps(todaySteps);
-    console.log('Loaded persisted steps:', todaySteps);
-  };
+// Keep your imports and other code the same.
+// ONLY REPLACE THE 'veryIntensiveTask' FUNCTION with this:
 
-  const start = () => {
-    startStepCounterUpdate(new Date(), raw => {
-      const d = parseStepData(raw);
+const veryIntensiveTask = async (taskDataArguments: any) => {
+  const { delay } = taskDataArguments;
 
-      const previousSensorCount = getLastSensorCount();
-      const existingSteps = loadTodaySteps();
+  // Load the last known hardware value from disk so we don't start at 0
+  let previousHardwareValue = loadLastHardwareValue();
+  let isBaselineEstablished = previousHardwareValue > 0;
 
-      let delta = 0;
+  console.log(
+    `BG Service: Starting Loop. Previous HW Value: ${previousHardwareValue}`,
+  );
 
-      if (d.steps >= previousSensorCount) {
-        // normal case
-        delta = d.steps - previousSensorCount;
-      } else {
-        // SENSOR RESET (phone reboot / app kill / driver restart)
-        delta = d.steps;
-      }
+  // --- THE INFINITE LOOP ---
+  // We restart the sensor process every cycle to ensure it never stays dead.
+  while (BackgroundService.isRunning()) {
+    // 1. Safety: Stop any existing/dead listeners
+    try {
+      stopStepCounterUpdate();
+    } catch (e) {}
 
-      const totalSteps = existingSteps + delta;
+    // 2. Define the reading point (Year 2000 = Total Device Steps)
+    const startPoint = new Date();
+    startPoint.setFullYear(2000, 0, 1);
 
-      console.log('Sensor:', d.steps);
-      console.log('Prev sensor:', previousSensorCount);
-      console.log('Delta:', delta);
-      console.log('Total:', totalSteps);
+    // 3. Start the Sensor
+    // We wrap this in a Promise so we can "wait" for a reading before sleeping
+    await new Promise<void>(resolve => {
+      let readingReceived = false;
 
-      setSteps(totalSteps);
-      setInfo(d);
+      startStepCounterUpdate(startPoint, raw => {
+        // If we already got a reading for this cycle, ignore extras
+        if (readingReceived) return;
+        readingReceived = true;
 
-      saveTodaySteps(totalSteps);
-      saveLastSensorCount(d.steps);
+        const data = parseStepData(raw);
+        const currentHardwareValue = data.steps;
+
+        console.log(`[HEARTBEAT] Hardware Odometer: ${currentHardwareValue}`);
+
+        // --- MATH LOGIC ---
+        if (!isBaselineEstablished) {
+          // First run ever
+          saveLastHardwareValue(currentHardwareValue);
+          previousHardwareValue = currentHardwareValue;
+          isBaselineEstablished = true;
+        } else {
+          // Calculate Steps added since last loop
+          let diff = currentHardwareValue - previousHardwareValue;
+
+          // Reboot protection
+          if (currentHardwareValue < previousHardwareValue) {
+            diff = currentHardwareValue;
+          }
+
+          if (diff > 0) {
+            const currentTotal = loadTodaySteps();
+            const newTotal = currentTotal + diff;
+
+            // Save everything
+            saveTodaySteps(newTotal);
+            saveLastHardwareValue(currentHardwareValue);
+            previousHardwareValue = currentHardwareValue;
+
+            // Update Notification
+            BackgroundService.updateNotification({
+              taskDesc: `Steps: ${newTotal}`,
+            });
+
+            console.log(`[STEP DETECTED] +${diff}. New Total: ${newTotal}`);
+          }
+        }
+
+        // We got our data, we can resolve the promise now
+        resolve();
+      });
+
+      // Fallback: If sensor doesn't reply in 1 second, move on (prevents hanging)
+      setTimeout(() => {
+        if (!readingReceived) resolve();
+      }, 1000);
     });
 
-    setActive(true);
-  };
+    // 4. Sleep for the delay (e.g. 2 or 5 seconds) before checking again
+    await sleep(delay);
+  }
 
-  const stop = () => {
-    stopStepCounterUpdate();
-    setActive(false);
+  stopStepCounterUpdate();
+};
+
+const options = {
+  taskName: 'Step_Counter_Task',
+  taskTitle: 'Step Counter Active',
+  taskDesc: 'Tracking steps...',
+  taskIcon: {
+    name: 'ic_launcher',
+    type: 'mipmap',
+  },
+  color: '#ff00ff',
+  linkingURI: 'package://com.stepsensor',
+  parameters: {
+    delay: 2000,
+  },
+  // Essential for Android 14+
+  type: 'dataSync',
+};
+
+// --- UI COMPONENT ---
+
+export default function App() {
+  const [steps, setSteps] = useState(0);
+  const [isServiceRunning, setIsServiceRunning] = useState(false);
+
+  const toggleService = async () => {
+    const running = BackgroundService.isRunning();
+    if (running) {
+      await BackgroundService.stop();
+      setIsServiceRunning(false);
+    } else {
+      // Just start normally. The library keeps it alive by default.
+      await BackgroundService.start(veryIntensiveTask, options);
+      setIsServiceRunning(true);
+    }
   };
 
   useEffect(() => {
-    const initialize = async () => {
-      const granted = await getStepPermission();
-      setAllowed(granted);
+    const interval = setInterval(() => {
+      setSteps(loadTodaySteps());
+      setIsServiceRunning(BackgroundService.isRunning());
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
-      if (granted) {
-        loadPersistedSteps();
-        start();
+  useEffect(() => {
+    const init = async () => {
+      await getStepPermission();
+      const running = BackgroundService.isRunning();
+      setIsServiceRunning(running);
+      setSteps(loadTodaySteps());
+
+      // Auto-start on launch if not running
+      if (!running) {
+        await BackgroundService.start(veryIntensiveTask, options);
+        setIsServiceRunning(true);
       }
     };
-
-    initialize();
-
-    return () => stopStepCounterUpdate();
+    init();
   }, []);
-  console.log('Permission allowed:', allowed);
 
   return (
     <SafeAreaView>
@@ -100,15 +182,39 @@ export default function App() {
           maxValue={10000}
           radius={150}
           valueSuffix=" steps"
-          subtitle={info.calories === '0 kCal' ? '' : info.calories}
+          subtitle={isServiceRunning ? 'Service: ON' : 'Service: OFF'}
         />
 
-        <View style={styles.row}>
-          <Button title="Start" onPress={start} disabled={active} />
-          <Button title="Stop" onPress={stop} disabled={!active} />
+        <View style={styles.statusBox}>
+          <Text style={styles.statusText}>
+            {isServiceRunning ? 'Background Active' : 'Background Stopped'}
+          </Text>
         </View>
 
-        <LogCat active={active} />
+        <View style={styles.row}>
+          <Button
+            title={isServiceRunning ? 'Stop Service' : 'Start Service'}
+            onPress={toggleService}
+            color={isServiceRunning ? 'red' : 'green'}
+          />
+        </View>
+
+        <View style={{ marginTop: 10 }}>
+          <Button
+            title="Reset Steps"
+            onPress={async () => {
+              if (BackgroundService.isRunning()) await BackgroundService.stop();
+              saveTodaySteps(0);
+              saveLastHardwareValue(0);
+              setSteps(0);
+              // Restart immediately
+              await BackgroundService.start(veryIntensiveTask, options);
+              setIsServiceRunning(true);
+            }}
+          />
+        </View>
+
+        <LogCat active={true} />
       </View>
     </SafeAreaView>
   );
@@ -120,6 +226,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     backgroundColor: '#2f3774',
+  },
+  statusBox: {
+    marginVertical: 20,
+  },
+  statusText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   row: {
     flexDirection: 'row',
