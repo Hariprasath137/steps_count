@@ -44,7 +44,9 @@ const veryIntensiveTask = async (taskDataArguments: any) => {
     // 1. Safety: Stop any existing/dead listeners
     try {
       stopStepCounterUpdate();
-    } catch (e) {}
+    } catch (e) {
+      console.log(e);
+    }
 
     // 2. Define the reading point (Year 2000 = Total Device Steps)
     const startPoint = new Date();
